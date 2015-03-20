@@ -1,0 +1,72 @@
+---
+title: "Machine learning final project"
+author: "Jason Parker"
+date: "March 19, 2015"
+output: html_document
+---
+
+# Executive summary
+To predict the manner in which the participants completed the exercise, I created a model using the random forests algorithm. I used cross validation by dividing the training data into a training and testing subset. When I then predicted the outcome variable "classe" for the testing data, the algorithm predicted results with 100% accuracy. My algorithm used 53 variables, which caused it to take a long time to build the model. In the future, I'll take more steps to reduce the number of features to have a more efficient build.
+
+```{r, eval = FALSE}
+library(caret); library(ggplot2); library(dplyr); library(utils)
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+              destfile = "pml-training.csv",
+              method = "curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+              destfile = "pml-testing.csv",
+              method = "curl")
+
+trainingData <- read.csv("pml-training.csv", na.strings=c("", "NA", "#DIV/0!"))
+testingData <- read.csv("pml-testing.csv", na.strings=c("", "NA", "#DIV/0!"))
+```
+
+# Feature selection
+In my initial examination of the data, I noticed a lot of NA values in many of the variables. I then determined that many of the columns were as much as 97-100% NA, so I decided to eliminate these variables from consideration. I then removed variables related to timestamps, the names of participants, and other features that wouldn't have any relevance in determining the quality of the exercise motion. I also tested for variables with near zero variability, but none of the features actually met this criteria. I left the code because this seems like a best practice for general model building.
+
+```{r, eval = FALSE}
+##  Only keep columns in which at least 50% of observations are not NA
+keepColumns <- colMeans(is.na(trainingData)) < .5
+
+training <- trainingData[,keepColumns]
+training <- select(training, -c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2,
+                               cvtd_timestamp, new_window, num_window))
+testing <- testingData[,keepColumns]
+testing <- select(testing, -c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2,
+                                cvtd_timestamp, new_window, num_window))
+
+##  Near zero variability
+nsv <- nearZeroVar(training, saveMetrics = TRUE)
+training <- training[,nsv$zeroVar == FALSE]
+testing <- testing[,nsv$zeroVar == FALSE]
+```
+
+# Cross validation
+For cross validation, I divided the training data into training (75%) and testing (25%) subsets. This allowed me to check the accuracy of the model without accessing the actual testing data.
+
+```{r, eval = FALSE}
+inTrain <- createDataPartition(y = training$classe, p = .75, list = FALSE)
+
+trainingSet <- training[inTrain,]
+testingSet <- training[-inTrain,]
+```
+
+# Random forests model
+My solution built a model with the random forests algorithm using the training subset of the training data.
+
+```{r, eval = FALSE}
+modelFit <- train(classe ~ ., method = "rf", data = trainingSet)
+```
+
+# Out of sample error
+I used the testing subset of the training data to determine the out of sample error rate of the algorithm. The algorithm miss-classified 18 observations out of a data set of 4,904 rows, which is a missclassification rate of 0.37%.
+
+```{r, eval = FALSE}
+testingSetPrediction <- table(predict(modelFit, newdata = testingSet))
+testingSetActual <- table(testingSet$classe)
+missClassVector <- as.vector(testingSetPrediction - testingSetActual)
+missClassTotal <- sum(abs(missClassVector))
+missClassPercent <- missClassTotal/nrow(testingSet)
+```
+
